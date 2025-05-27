@@ -1,0 +1,140 @@
+trigger: none
+
+parameters:
+  - name: targetEnvironment
+    displayName: "Select the Environment"
+    type: string
+    default: dev
+    values:
+      - sbox
+      - nonprod
+      - dev
+      - test
+      - uat
+  - name: pipeline_branch
+    displayName: "Select the Core-library Branch"
+    type: string
+    default: feature-sreejit-iac
+
+variables:
+  - template: variables/${{parameters.targetEnvironment}}.yaml
+
+resources:
+  repositories:
+    - repository: coreLibrary
+      type: git
+      name: EAS Azure Community of Practice/eas-azure-iac-core-library
+      ref: refs/heads/feature-sreejit-iac
+      path: $(Pipeline.Workspace)/coreLibrary
+
+pool:
+  name: sandbox-pool
+  demands:
+    - agent.name -equals vm-eas-mulesoft-build-agent-pool-001
+
+stages:
+  - stage: Deploy_Virtual_Machine
+    displayName: "Deploy Virtual Machine"
+    jobs:
+      - job: DeployVM
+        displayName: "Deploy Virtual Machine"
+        steps:
+          - checkout: self
+            fetchDepth: 0
+          - checkout: coreLibrary
+            displayName: '📚 Checkout Core Library'
+            clean: true
+          - script: |
+              echo "Listing coreLibrary contents after checkout:"
+              ls -R "$(Pipeline.Workspace)/coreLibrary" || echo "coreLibrary directory not found"
+              ls -R "$(Pipeline.Workspace)/s/eas-azure-iac-core-library" || echo "s/eas-azure-iac-core-library directory not found"
+            displayName: 'Debug Core Library Checkout'
+          - script: |
+              echo "vmName: ${{ variables.vmName }}"
+              echo "computerName: ${{ variables.computerName }}"
+              echo "vmResourceGroupName: ${{ variables.vmResourceGroupName }}"
+              echo "vmSize: ${{ variables.vmSize }}"
+              echo "osType: ${{ variables.osType }}"
+              echo "zone: ${{ variables.zone }}"
+              echo "enableTelemetry: ${{ variables.enableTelemetry }}"
+              echo "tags_OwnedBy: ${{ variables.tags_OwnedBy }}"
+              echo "subnetResourceId: ${{ variables.subnetResourceId }}"
+              echo "enableAcceleratedNetworking: ${{ variables.enableAcceleratedNetworking }}"
+              echo "adminPassword: [REDACTED]"
+            displayName: "Log Parameters"
+          - task: AzureCLI@2
+            displayName: "Verify Subnet and Disk"
+            inputs:
+              azureSubscription: ${{ variables.AZURE_SUBSCRIPTION }}
+              scriptType: "bash"
+              scriptLocation: "inlineScript"
+              inlineScript: |
+                echo "Checking Subnet existence:"
+                az network vnet subnet show \
+                  --resource-group ${{ variables.vmResourceGroupName }} \
+                  --vnet-name ${{ variables.vnet }} \
+                  --name ${{ variables.subnet }} \
+                  --query "{name:name}" \
+                  || { echo "Subnet ${{ variables.subnet }} not found"; exit 1; }
+                echo "Checking Data Disk existence:"
+                az disk show \
+                  --resource-group ${{ variables.diskResourceGroupName }} \
+                  --name ${{ variables.DatadiskName }} \
+                  --query "{name:name, zones:zones, diskState:diskState}" \
+                  || echo "Data disk ${{ variables.DatadiskName }} not found"
+          - template: pipeline-templates/compute/virtual-machine/virtual-machine.yaml@coreLibrary
+            parameters:
+              azureSubscription: ${{ variables.AZURE_SUBSCRIPTION }}
+              resourceGroupName: ${{ variables.vmResourceGroupName }}
+              vmName: ${{ variables.vmName }}
+              computerName: ${{ variables.computerName }}
+              location: ${{ variables.vmLocation }}
+              vmSize: ${{ variables.vmSize }}
+              osType: ${{ variables.osType }}
+              adminUsername: ${{ variables.adminUsername }}
+              adminPassword: ${{ variables.adminPassword }}
+              imageReference:
+                publisher: MicrosoftWindowsServer
+                offer: WindowsServer
+                sku: 2022-datacenter-azure-edition
+                version: latest
+              osDisk:
+                name: ${{ variables.OSdiskName }}
+                diskSizeGB: 128
+                createOption: FromImage
+                caching: ReadWrite
+                managedDisk:
+                  storageAccountType: StandardSSD_LRS
+              dataDisks:
+                - name: ${{ variables.DatadiskName }}
+                  lun: 0
+                  diskSizeGB: 128
+                  createOption: Empty
+                  caching: ReadOnly
+                  managedDisk:
+                    storageAccountType: StandardSSD_LRS
+              nicConfigurations:
+                - name: ${{ variables.nicName }}
+                  zone: 0
+                  enableAcceleratedNetworking: ${{ variables.enableAcceleratedNetworking }}
+                  ipConfigurations:
+                    - name: ipconfig1
+                      subnetResourceId: ${{ variables.subnetResourceId }}
+                      privateIPAddressVersion: ${{ variables.privateIPAddressVersion }}
+                      privateIPAllocationMethod: ${{ variables.privateIPAllocationMethod }}
+              zone: ${{ variables.zone }}
+              tags:
+                Environment: "${{ variables.environment }}"
+                OwnedBy: "${{ variables.tags_OwnedBy }}"
+                ManagedBy: "${{ variables.tags_ManagedBy }}"
+                ProcessDomain: "${{ variables.tags_ProcessDomain }}"
+                Project: "${{ variables.tags_Project }}"
+                Application: "${{ variables.tags_Application }}"
+                CreatedBy: "${{ variables.tags_CreatedBy }}"
+                SecurityLevel: "${{ variables.tags_SecurityLevel }}"
+                Criticality: "${{ variables.tags_Criticality }}"
+                slaCriticality: "${{ variables.tags_slaCriticality }}"
+                Description: "${{ variables.tags_Description }}"
+              roleAssignments: []
+              enableTelemetry: ${{ variables.enableTelemetry }}
+              encryptionAtHost: false

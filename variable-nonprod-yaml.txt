@@ -1,0 +1,95 @@
+variables:
+  #----------------------Common values----------------------#
+  - name: AZURE_SUBSCRIPTION
+    value: azure-sc-ansys-eas-hub-nonprod-v2
+  - name: resourceGroupName
+    value: rg-eas-compute-nonprod-eastus
+  - name: location
+    value: eastus
+  - name: environment
+    value: nonprod
+  - name: tags_OwnedBy
+    value: sean.sarder@ansys.com
+  - name: tags_ManagedBy
+    value: EAS_Azure_Platform_Support@ansys.com
+  - name: tags_ProcessDomain
+    value: E&SC
+  - name: tags_Project
+    value: IAC Core Infra Componenets
+  - name: tags_Application
+    value: Sandbox Resource
+  - name: tags_CreatedBy
+    value: EAS_Azure_IAC_Automation@ansys.com
+  - name: tags_Description
+    value: IaC for deploying E2E Virtual Machine 
+  - name: tags_SecurityLevel
+    value: High
+  - name: tags_Criticality
+    value: High
+  - name: tags_slaCriticality
+    value: High
+  - name: managedIdentities_systemAssigned
+    value: false
+  - name: roleAssignments_principalType
+    value: ServicePrincipal
+  - name: enableTelemetry
+    value: true
+  #----------------------Virtual Machine----------------------#
+  - name: vmResourceGroupName
+    value: rg-eas-compute-nonprod-eastus
+  - name: vmName
+    value: vm-win-myapp-nonprod-eastus-001
+  - name: computerName
+    value: myappvm
+  - name: vmLocation
+    value: eastus
+  - name: vmSize
+    value: Standard_B4ms
+  - name: osType
+    value: Windows
+  - name: adminUsername
+    value: azureadmin
+  - name: adminPassword
+    value: PassworD123!
+  - name: zone
+    value: 0
+  #----------------------Network Interface----------------------#
+  - name: nicResourceGroupName
+    value: rg-eas-compute-nonprod-eastus
+  - name: nicName
+    value: nic-vm-win-myapp-nonprod-eastus-001
+  - name: nicLocation
+    value: eastus
+  - name: privateIPAddressVersion
+    value: IPv4
+  - name: privateIPAllocationMethod
+    value: Dynamic
+  - name: vnet
+    value: vnet-myapp-sbox-eastus-001
+  - name: subnet
+    value: sub-myapp-sbox-eastus-001
+  - name: subnetResourceId
+    value: /subscriptions/9f05e3de-d7ff-4d27-a228-f2f48acf42c9/resourceGroups/rg-eas-compute-nonprod-eastus/providers/Microsoft.Network/virtualNetworks/vnet-myapp-sbox-eastus-001/subnets/sub-myapp-sbox-eastus-001
+  - name: enableAcceleratedNetworking
+    value: false
+  - name: enableIPForwarding
+    value: false
+  - name: zone
+    value: 0
+  #----------------------Disk----------------------#
+  - name: diskResourceGroupName
+    value: rg-eas-compute-nonprod-eastus
+  - name: DatadiskName
+    value: disk-vm-win-myapp-nonprod-eastus-001
+  - name: OSdiskName
+    value: disk-os-vm-win-myapp-nonprod-eastus-001
+  - name: diskLocation
+    value: eastus
+  - name: sku
+    value: StandardSSD_LRS
+  - name: diskSizeGB
+    value: 128
+  - name: createOption
+    value: Empty
+  - name: availabilityZone
+    value: 0

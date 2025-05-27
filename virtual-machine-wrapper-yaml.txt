@@ -1,0 +1,193 @@
+parameters:
+  - name: azureSubscription
+    type: string
+    displayName: "Azure Subscription (Service Connection)"
+  - name: resourceGroupName
+    type: string
+    displayName: "Resource Group Name"
+  - name: vmName
+    type: string
+    displayName: "Virtual Machine Name"
+  - name: computerName
+    type: string
+    displayName: "Windows Computer Name (max 15 chars)"
+  - name: location
+    type: string
+    default: "eastus"
+    displayName: "Deployment Location"
+  - name: vmSize
+    type: string
+    default: "Standard_B4ms"
+    displayName: "VM Size"
+  - name: osType
+    type: string
+    default: "Windows"
+    values:
+      - "Windows"
+      - "Linux"
+    displayName: "Operating System Type"
+  - name: adminUsername
+    type: string
+    displayName: "Administrator Username"
+  - name: adminPassword
+    type: string
+    displayName: "Administrator Password (Secure)"
+  - name: imageReference
+    type: object
+    displayName: "OS Image Reference"
+  - name: osDisk
+    type: object
+    displayName: "OS Disk Configuration"
+  - name: dataDisks
+    type: object
+    default: []
+    displayName: "Data Disks Configuration"
+  - name: nicConfigurations
+    type: object
+    displayName: "Network Interface Configurations"
+  - name: zone
+    type: number
+    default: 0
+    values:
+      - 0
+      - 1
+      - 2
+      - 3
+    displayName: "Availability Zone (0 for non-zonal, 1, 2, 3 for zonal)"
+  - name: tags
+    type: object
+    default: {}
+    displayName: "Resource Tags"
+  - name: roleAssignments
+    type: object
+    default: []
+    displayName: "Role Assignments"
+  - name: enableTelemetry
+    type: boolean
+    default: true
+    displayName: "Enable Telemetry"
+  - name: encryptionAtHost
+    type: boolean
+    default: false
+    displayName: "Enable Encryption at Host"
+
+steps:
+  - task: AzureCLI@2
+    displayName: "Validate Virtual Machine via Bicep"
+    inputs:
+      azureSubscription: ${{ parameters.azureSubscription }}
+      scriptType: "bash"
+      scriptLocation: "inlineScript"
+      inlineScript: |
+        # Validate adminPassword
+        if [ -z "${{ parameters.adminPassword }}" ]; then
+          echo "ERROR: adminPassword is empty or not provided"
+          exit 1
+        fi
+        echo "adminPassword provided (length: ${#{{ parameters.adminPassword }}})"
+
+        # Debug: Log input parameters
+        echo "vmName parameter: ${{ parameters.vmName }}"
+        echo "computerName parameter: ${{ parameters.computerName }}"
+        echo "adminPassword parameter: [REDACTED]" # Avoid logging sensitive data
+        echo "enableTelemetry parameter: ${{ parameters.enableTelemetry }}"
+        echo "encryptionAtHost parameter: ${{ parameters.encryptionAtHost }}"
+        echo "Raw tags parameter: ${{ convertToJson(parameters.tags) }}"
+        echo "nicConfigurations parameter: ${{ convertToJson(parameters.nicConfigurations) }}"
+
+        # Debug: List coreLibrary contents
+        echo "Listing coreLibrary contents:"
+        ls -R "$(Pipeline.Workspace)/s/eas-azure-iac-core-library" || echo "Directory not found"
+
+        # Ensure enableTelemetry is a valid Boolean
+        ENABLETELEMETRY="${{ parameters.enableTelemetry }}"
+        if [ "$ENABLETELEMETRY" = "true" ] || [ "$ENABLETELEMETRY" = "True" ]; then
+          ENABLETELEMETRY="true"
+        elif [ "$ENABLETELEMETRY" = "false" ] || [ "$ENABLETELEMETRY" = "False" ]; then
+          ENABLETELEMETRY="false"
+        else
+          echo "Invalid enableTelemetry value: $ENABLETELEMETRY. Defaulting to true."
+          ENABLETELEMETRY="true"
+        fi
+        echo "Processed ENABLETELEMETRY: $ENABLETELEMETRY"
+
+        # Ensure encryptionAtHost is a valid Boolean
+        ENCRYPTIONATHOST="${{ parameters.encryptionAtHost }}"
+        if [ "$ENCRYPTIONATHOST" = "true" ] || [ "$ENCRYPTIONATHOST" = "True" ]; then
+          ENCRYPTIONATHOST="true"
+        elif [ "$ENCRYPTIONATHOST" = "false" ] || [ "$ENCRYPTIONATHOST" = "False" ]; then
+          ENCRYPTIONATHOST="false"
+        else
+          echo "Invalid encryptionAtHost value: $ENCRYPTIONATHOST. Defaulting to false."
+          ENCRYPTIONATHOST="false"
+        fi
+        echo "Processed ENCRYPTIONATHOST: $ENCRYPTIONATHOST"
+
+        # Generate parameters JSON
+        cat > params.json << EOF
+        {
+          "name": { "value": "${{ parameters.vmName }}" },
+          "computerName": { "value": "${{ parameters.computerName }}" },
+          "location": { "value": "${{ parameters.location }}" },
+          "vmSize": { "value": "${{ parameters.vmSize }}" },
+          "osType": { "value": "${{ parameters.osType }}" },
+          "adminUsername": { "value": "${{ parameters.adminUsername }}" },
+          "adminPassword": { "value": "${{ parameters.adminPassword }}" },
+          "imageReference": { "value": ${{ convertToJson(parameters.imageReference) }} },
+          "osDisk": { "value": ${{ convertToJson(parameters.osDisk) }} },
+          "dataDisks": { "value": ${{ convertToJson(parameters.dataDisks) }} },
+          "nicConfigurations": { "value": ${{ convertToJson(parameters.nicConfigurations) }} },
+          "zone": { "value": ${{ parameters.zone }} },
+          "tags": { "value": ${{ convertToJson(parameters.tags) }} },
+          "roleAssignments": { "value": ${{ convertToJson(parameters.roleAssignments) }} },
+          "enableTelemetry": { "value": $ENABLETELEMETRY },
+          "encryptionAtHost": { "value": $ENCRYPTIONATHOST }
+        }
+        EOF
+
+        # Clean up line endings
+        cat params.json | tr -d '\r' > params_clean.json
+        mv params_clean.json params.json
+
+        # Validate JSON
+        python3 -c "import json; json.load(open('params.json'))" || { echo "Invalid JSON in params.json"; cat params.json; exit 1; }
+
+        # Debug: Print generated JSON (mask adminPassword)
+        echo "Generated params.json:"
+        cat params.json | sed 's/"adminPassword": { "value": "[^"]*"/"adminPassword": { "value": "[REDACTED]"/'
+
+        # Debug: Check Bicep file existence and contents
+        BICEP_FILE="$(Pipeline.Workspace)/s/eas-azure-iac-core-library/bicep/res/compute/virtual-machine/main.bicep"
+        echo "Checking Bicep file: $BICEP_FILE"
+        if [ -f "$BICEP_FILE" ]; then
+          echo "Bicep file found. Contents:"
+          cat "$BICEP_FILE"
+        else
+          echo "Bicep file not found at $BICEP_FILE"
+          exit 1
+        fi
+
+        # Validate deployment
+        az deployment group validate \
+          --resource-group "${{ parameters.resourceGroupName }}" \
+          --template-file "$BICEP_FILE" \
+          --parameters @params.json \
+          --output json || { echo "Validation failed"; exit 1; }
+
+  - task: AzureCLI@2
+    displayName: "Deploy Virtual Machine"
+    inputs:
+      azureSubscription: ${{ parameters.azureSubscription }}
+      scriptType: "bash"
+      scriptLocation: "inlineScript"
+      inlineScript: |
+        # Deploy resources
+        az deployment group create \
+          --resource-group "${{ parameters.resourceGroupName }}" \
+          --template-file "$(Pipeline.Workspace)/s/eas-azure-iac-core-library/bicep/res/compute/virtual-machine/main.bicep" \
+          --parameters @params.json \
+          --mode Incremental
+
+  - script: |
+      echo "✓ Successfully deployed Virtual Machine: ${{ parameters.vmName }}"
+    displayName: "Deployment Confirmation"
